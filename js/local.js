@@ -88,3 +88,8 @@ LocalAccess.prototype.readFileIfExistsUTF8 = function(file, callback, notFoundCa
     document.getElementById("applet").readFileIfExistsUTF8(file, "LocalAccess_notFoundCallback", requestId, this.CB, this.E_CB);
 }
 
+LocalAccess.prototype.writeFileUTF8 = function(file, content, callback, errorCallback) {
+    var requestId = "w" + LocalAccess_callbackIndex++;    
+    LocalAccess_callbacks[requestId] = { success: callback, error: errorCallback };
+    document.getElementById("applet").writeFileUTF8(file, content, requestId, this.CB, this.E_CB);
+}
