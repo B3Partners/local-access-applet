@@ -134,6 +134,13 @@ public class LocalAccessApplet extends Applet {
             
             return out.toString("UTF-8");                    
         }
+        
+        private static void writeFileUTF8(String file, String content) throws IOException {
+            FileOutputStream fos = new FileOutputStream(file);
+            fos.write(content.getBytes("UTF-8"));
+            fos.flush();
+            fos.close();
+        }        
     }
     
     private static String exceptionMessage(Exception e) {
@@ -327,6 +334,48 @@ public class LocalAccessApplet extends Applet {
                 }
             }
         });       
-    }            
+    }      
+    
+    /**
+     * Write a String to a file in UTF-8 encoding.
+     * 
+     * @param file the file to write
+     * @param content String to write to the file in UTF-8.
+     * @param callback JavaScript function to call when successfully written.
+     * @param errorCallback JavaScript function to call when an error occurs. Single
+     *   String argument is a toString() of the Exception. 
+     */    
+    public void writeFileUTF8(final String file, final String content, final String requestId, final String callback, final String errorCallback) {
+        final Applet applet = this;
+        executorService.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    progress(true, "Schrijven bestand \"" + file + "\"...");
+                    
+                    Object ret = AccessController.doPrivileged(new PrivilegedAction() {
+                        @Override
+                        public Object run() {
+                            try {
+                                Privileged.writeFileUTF8(file, content);
+                                return null;
+                            } catch (Exception ex) {
+                                return ex;
+                            }
+                        }
+                    });        
+                    if(ret instanceof Exception) {
+                        JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage((Exception)ret) });
+                    } else {                       
+                        JSObject.getWindow(applet).call(callback, new Object[] { requestId });
+                    } 
+                } catch(Exception e) {
+                    JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage(e) });
+                } finally {
+                    progress(false);
+                }
+            }
+        });       
+    }       
 }
 
