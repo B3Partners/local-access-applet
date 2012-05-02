@@ -25,7 +25,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.swing.*;
 import netscape.javascript.JSObject;
-import org.apache.commons.codec.binary.Base64OutputStream;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -117,7 +116,7 @@ public class LocalAccessApplet extends Applet {
             return ja;
         }        
         
-        private static String readFileBase64(String file) throws IOException {
+        private static String readFileUTF8(String file) throws IOException {
             File f = new File(file);
             if(!f.exists() || !f.canRead()) {
                 throw new FileNotFoundException(file);
@@ -129,14 +128,11 @@ public class LocalAccessApplet extends Applet {
             FileInputStream in = new FileInputStream(file);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             
-            Base64OutputStream outb64 = new Base64OutputStream(out, true, 0, null);
-            
             byte[] buffer = new byte[8192];
             
-            IOUtils.copyLarge(in, outb64, buffer);
+            IOUtils.copyLarge(in, out, buffer);
             
-            outb64.flush();
-            return out.toString("US-ASCII");                    
+            return out.toString("UTF-8");                    
         }
     }
     
@@ -249,15 +245,15 @@ public class LocalAccessApplet extends Applet {
     }
     
     /**
-     * Read a file and call a JavaScript function with the BASE64 encoded file
-     * content.
+     * Read a file and call a JavaScript function with the file content as a String
+     * assuming the file is UTF-8.
      * 
      * @param file the file to read
      * @param callback JavaScript function to call with the file content.
      * @param errorCallback JavaScript function to call when an error occurs. Single
      *   String argument is a toString() of the Exception. 
      */    
-    public void readFileBase64(final String file, final String requestId, final String callback, final String errorCallback) {
+    public void readFileUTF8(final String file, final String requestId, final String callback, final String errorCallback) {
         final Applet applet = this;
         executorService.execute(new Runnable() {
             @Override
@@ -269,7 +265,7 @@ public class LocalAccessApplet extends Applet {
                         @Override
                         public Object run() {
                             try {
-                                return Privileged.readFileBase64(file);
+                                return Privileged.readFileUTF8(file);
                             } catch (Exception ex) {
                                 return ex;
                             }
@@ -287,6 +283,50 @@ public class LocalAccessApplet extends Applet {
                 }
             }
         });       
-    }
+    }    
+    
+    /**
+     * Read a file and call a JavaScript function with the file content as a String
+     * assuming the file is UTF-8. 
+     * 
+     * @param file the file to read
+     * @param callback JavaScript function to call with the file content.
+     * @param notFoundCallback JavaScript function to call if the file doest not exist
+     * @param errorCallback JavaScript function to call when an error occurs. Single
+     *   String argument is a toString() of the Exception. 
+     */    
+    public void readFileIfExistsUTF8(final String file, final String notFoundCallback, final String requestId, final String callback, final String errorCallback) {
+        final Applet applet = this;
+        executorService.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    progress(true, "Lezen bestand \"" + file + "\"...");
+                    
+                    Object ret = AccessController.doPrivileged(new PrivilegedAction() {
+                        @Override
+                        public Object run() {
+                            try {
+                                return Privileged.readFileUTF8(file);
+                            } catch (Exception ex) {
+                                return ex;
+                            }
+                        }
+                    });        
+                    if(ret instanceof FileNotFoundException) {
+                        JSObject.getWindow(applet).call(notFoundCallback, new Object[] { requestId });
+                    } else if(ret instanceof Exception) {
+                        JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage((Exception)ret) });
+                    } else {                       
+                        JSObject.getWindow(applet).call(callback, new Object[] { requestId, ret.toString()});
+                    } 
+                } catch(Exception e) {
+                    JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage(e) });
+                } finally {
+                    progress(false);
+                }
+            }
+        });       
+    }            
 }
 
