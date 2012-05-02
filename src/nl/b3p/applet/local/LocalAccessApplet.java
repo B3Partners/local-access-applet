@@ -18,10 +18,7 @@ package nl.b3p.applet.local;
 
 import java.applet.Applet;
 import java.awt.*;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
+import java.io.*;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.concurrent.ExecutorService;
@@ -41,6 +38,8 @@ import org.json.JSONObject;
  */
 public class LocalAccessApplet extends Applet {
 
+    private static final int MAX_FILE_SIZE = 128 * 1024;
+    
     private static final String TOOLTIP_DEFAULT = "Java applet voor het openen van lokale mappen";
     private final JLabel status = new JLabel("");
     private Icon java, spinner;
@@ -119,6 +118,14 @@ public class LocalAccessApplet extends Applet {
         }        
         
         private static String readFileBase64(String file) throws IOException {
+            File f = new File(file);
+            if(!f.exists() || !f.canRead()) {
+                throw new FileNotFoundException(file);
+            }
+            if(f.length() > MAX_FILE_SIZE) {
+                throw new IOException("Bestand is te groot");
+            }
+                
             FileInputStream in = new FileInputStream(file);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             
