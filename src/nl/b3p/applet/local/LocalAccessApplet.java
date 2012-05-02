@@ -18,14 +18,17 @@ package nl.b3p.applet.local;
 
 import java.applet.Applet;
 import java.awt.*;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.security.AccessControlException;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.swing.*;
 import netscape.javascript.JSObject;
+import org.apache.commons.codec.binary.Base64OutputStream;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -114,6 +117,30 @@ public class LocalAccessApplet extends Applet {
             }      
             return ja;
         }        
+        
+        private static String readFileBase64(String file) throws IOException {
+            FileInputStream in = new FileInputStream(file);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            
+            Base64OutputStream outb64 = new Base64OutputStream(out, true, 0, null);
+            
+            byte[] buffer = new byte[8192];
+            
+            IOUtils.copyLarge(in, outb64, buffer);
+            
+            outb64.flush();
+            return out.toString("US-ASCII");                    
+        }
+    }
+    
+    private static String exceptionMessage(Exception e) {
+        e.printStackTrace();
+        String s = e.toString();
+        StackTraceElement[] bt = e.getStackTrace();
+        if(bt.length > 0) {
+            s += " in " + bt[0].getFileName() + ":" + bt[0].getLineNumber() + " in " + bt[0].getMethodName();
+        }
+        return s;
     }
     
     
@@ -127,8 +154,7 @@ public class LocalAccessApplet extends Applet {
      * @param errorCallback JavaScript function to call when an error occurs. Single
      *   String argument is a toString() of the Exception. 
      */
-    public void selectDirectory(final String title, final String callback, final String errorCallback) {
-        status.setIcon(spinner);
+    public void selectDirectory(final String title, final String requestId, final String callback, final String errorCallback) {
         final Applet applet = this;
         executorService.execute(new Runnable() {
 
@@ -148,13 +174,13 @@ public class LocalAccessApplet extends Applet {
                     });            
                     
                     if(ret instanceof Exception) {
-                        JSObject.getWindow(applet).call(errorCallback, new Object[] { ret.toString() });
+                        JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage((Exception)ret) });
                     } else {
-                        JSObject.getWindow(applet).call(callback, new Object[] { ret });
+                        JSObject.getWindow(applet).call(callback, new Object[] { requestId, ret });
                     }
                     
                 } catch(Exception e) {
-                    JSObject.getWindow(applet).call(errorCallback, new Object[] { toString() });
+                    JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage(e) });
                 } finally {
                     progress(false);
                 }
@@ -183,7 +209,7 @@ public class LocalAccessApplet extends Applet {
      * @param errorCallback JavaScript function to call when an error occurs. Single
      *   String argument is a toString() of the Exception. 
      */    
-    public void listDirectory(final String dir, final String callback, final String errorCallback) {
+    public void listDirectory(final String dir, final String requestId, final String callback, final String errorCallback) {       
         final Applet applet = this;
         executorService.execute(new Runnable() {
             @Override
@@ -202,12 +228,53 @@ public class LocalAccessApplet extends Applet {
                         }
                     });            
                     if(ret instanceof Exception) {
-                        JSObject.getWindow(applet).call(errorCallback, new Object[] { ret.toString() });
+                        JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage((Exception)ret) });
                     } else {                       
-                        JSObject.getWindow(applet).call(callback, new Object[] { ret.toString()});
+                        JSObject.getWindow(applet).call(callback, new Object[] { requestId, ret.toString()});
                     } 
                 } catch(Exception e) {
-                    JSObject.getWindow(applet).call(errorCallback, new Object[] { e.toString() });
+                    JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId,  exceptionMessage(e) });
+                } finally {
+                    progress(false);
+                }
+            }
+        });       
+    }
+    
+    /**
+     * Read a file and call a JavaScript function with the BASE64 encoded file
+     * content.
+     * 
+     * @param file the file to read
+     * @param callback JavaScript function to call with the file content.
+     * @param errorCallback JavaScript function to call when an error occurs. Single
+     *   String argument is a toString() of the Exception. 
+     */    
+    public void readFileBase64(final String file, final String requestId, final String callback, final String errorCallback) {
+        final Applet applet = this;
+        executorService.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    progress(true, "Lezen bestand \"" + file + "\"...");
+                    
+                    Object ret = AccessController.doPrivileged(new PrivilegedAction() {
+                        @Override
+                        public Object run() {
+                            try {
+                                return Privileged.readFileBase64(file);
+                            } catch (Exception ex) {
+                                return ex;
+                            }
+                        }
+                    });            
+                    if(ret instanceof Exception) {
+                        JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage((Exception)ret) });
+                    } else {                       
+                        JSObject.getWindow(applet).call(callback, new Object[] { requestId, ret.toString()});
+                    } 
+                } catch(Exception e) {
+                    JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage(e) });
                 } finally {
                     progress(false);
                 }
