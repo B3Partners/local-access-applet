@@ -2,8 +2,12 @@
 
 function LocalAccess() {
     this.appletInitialized = false;
-    this.callbacks = {};
+    
+    this.CB = "LocalAccess_callback";
+    this.E_CB = "LocalAccess_errorCallback";
 }
+
+var localAccessAppletLoaded = function() {};
 
 LocalAccess.prototype.initApplet = function(callback) {
     if(this.appletInitialized) {
@@ -35,22 +39,38 @@ LocalAccess.prototype.registerCallbacks = function(callback, errorCallback) {
     return this.callbacksCounter++;
 }
 
-var LocalAccess_callbacks = { success: function() {}, error: function() {} };
+// Because the applet uses a worker thread, these callbacks may be called out-of-order
+var LocalAccess_callbacks = { };
+var LocalAccess_callbackIndex = 0;
 
 function LocalAccess_callback() {
-    LocalAccess_callbacks.success.apply(this, arguments);
+    var requestId = arguments[0];
+    var args = Array.prototype.slice.call(arguments,1);  
+    LocalAccess_callbacks[requestId].success.apply(this, args);
+    delete LocalAccess_callbacks[requestId];
 }
 
 function LocalAccess_errorCallback() {
-    LocalAccess_callbacks.error.apply(this, arguments);
+    var requestId = arguments[0];
+    var args = Array.prototype.slice.call(arguments,1);    
+    LocalAccess_callbacks[requestId].error.apply(this, args);
+    delete LocalAccess_callbacks[requestId];
 }
 
 LocalAccess.prototype.selectDirectory = function(title, callback, errorCallback) {
-    LocalAccess_callbacks = { success: callback, error: errorCallback };
-    document.getElementById("applet").selectDirectory(title, "LocalAccess_callback", "LocalAccess_errorCallback");
+    var requestId = "sd" + LocalAccess_callbackIndex++;
+    LocalAccess_callbacks[requestId] = { success: callback, error: errorCallback };
+    document.getElementById("applet").selectDirectory(title, requestId, this.CB, this.E_CB);
 }
 
 LocalAccess.prototype.listDirectory = function(dir, callback, errorCallback) {
-    LocalAccess_callbacks = { success: callback, error: errorCallback };
-    document.getElementById("applet").listDirectory(dir, "LocalAccess_callback", "LocalAccess_errorCallback");
+    var requestId = "ld" + LocalAccess_callbackIndex++;    
+    LocalAccess_callbacks[requestId] = { success: callback, error: errorCallback };
+    document.getElementById("applet").listDirectory(dir, requestId, this.CB, this.E_CB);
+}
+
+LocalAccess.prototype.readFileBase64 = function(file, callback, errorCallback) {
+    var requestId = "r" + LocalAccess_callbackIndex++;    
+    LocalAccess_callbacks[requestId] = { success: callback, error: errorCallback };
+    document.getElementById("applet").readFileBase64(file, requestId, this.CB, this.E_CB);
 }
