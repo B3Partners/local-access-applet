@@ -69,8 +69,22 @@ LocalAccess.prototype.listDirectory = function(dir, callback, errorCallback) {
     document.getElementById("applet").listDirectory(dir, requestId, this.CB, this.E_CB);
 }
 
-LocalAccess.prototype.readFileBase64 = function(file, callback, errorCallback) {
+LocalAccess.prototype.readFileUTF8 = function(file, callback, errorCallback) {
     var requestId = "r" + LocalAccess_callbackIndex++;    
     LocalAccess_callbacks[requestId] = { success: callback, error: errorCallback };
-    document.getElementById("applet").readFileBase64(file, requestId, this.CB, this.E_CB);
+    document.getElementById("applet").readFileUTF8(file, requestId, this.CB, this.E_CB);
 }
+
+function LocalAccess_notFoundCallback() {
+    var requestId = arguments[0];
+    var args = Array.prototype.slice.call(arguments,1);    
+    LocalAccess_callbacks[requestId].notFound.apply(this, args);
+    delete LocalAccess_callbacks[requestId];
+}
+
+LocalAccess.prototype.readFileIfExistsUTF8 = function(file, callback, notFoundCallback, errorCallback) {
+    var requestId = "rfnf" + LocalAccess_callbackIndex++;    
+    LocalAccess_callbacks[requestId] = { success: callback, error: errorCallback, notFound: notFoundCallback };
+    document.getElementById("applet").readFileIfExistsUTF8(file, "LocalAccess_notFoundCallback", requestId, this.CB, this.E_CB);
+}
+
