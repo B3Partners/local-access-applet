@@ -93,3 +93,9 @@ LocalAccess.prototype.writeFileUTF8 = function(file, content, callback, errorCal
     LocalAccess_callbacks[requestId] = { success: callback, error: errorCallback };
     document.getElementById("applet").writeFileUTF8(file, content, requestId, this.CB, this.E_CB);
 }
+
+LocalAccess.prototype.getShapefileMetadata = function(file, callback, errorCallback) {
+    var requestId = "sm" + LocalAccess_callbackIndex++;
+    LocalAccess_callbacks[requestId] = { success: callback, error: errorCallback };
+    document.getElementById("applet").getShapefileMetadata(file, requestId, this.CB, this.E_CB);
+}
