@@ -19,12 +19,17 @@ package nl.b3p.applet.local;
 import java.applet.Applet;
 import java.awt.*;
 import java.io.*;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
+import java.util.Scanner;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.swing.*;
 import netscape.javascript.JSObject;
+import org.geotools.data.shapefile.dbf.DbaseFileHeader;
+import org.geotools.data.shapefile.shp.ShapefileHeader;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -140,7 +145,78 @@ public class LocalAccessApplet extends Applet {
             fos.write(content.getBytes("UTF-8"));
             fos.flush();
             fos.close();
-        }        
+        }      
+        
+        private static String getShapefileMetadata(String file) throws IOException, JSONException {
+            
+            if(!file.toLowerCase().endsWith(".shp")) {
+                throw new IllegalArgumentException("File does not end with .shp: " + file);
+            }
+            
+            FileChannel channel = new FileInputStream(file).getChannel();
+            ShapefileHeader header = new ShapefileHeader();
+            ByteBuffer bb = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
+            header.read(bb, true);
+            channel.close();
+            channel = null;
+            file = file.substring(0, file.length()-4) + ".dbf";
+            
+            JSONObject j = new JSONObject();
+            j.put("type", header.getShapeType().name);
+            j.put("version", header.getVersion());
+            j.put("minX", header.minX());
+            j.put("minY", header.minY());
+            j.put("maxX", header.maxX());
+            j.put("maxY", header.maxY());
+            
+            JSONObject dbf = new JSONObject();
+            j.put("dbf", dbf);
+            try {
+                channel = new FileInputStream(file).getChannel();
+                DbaseFileHeader dheader = new DbaseFileHeader();
+                bb = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
+                dheader.readHeader(bb);
+                dbf.put("numRecords", dheader.getNumRecords());
+                JSONArray fields = new JSONArray();
+                dbf.put("fields", fields);
+                for(int i = 0; i < dheader.getNumFields(); i++) {
+                    JSONObject field = new JSONObject();
+                    fields.put(field);
+                    field.put("name", dheader.getFieldName(i));
+                    field.put("length", dheader.getFieldLength(i));
+                    field.put("decimalCount", dheader.getFieldDecimalCount(i));
+                    field.put("class", dheader.getFieldClass(i).getName().toString());
+                    field.put("type", dheader.getFieldType(i) + "");
+                }
+            } catch(Exception e) {
+                dbf.put("error", e.toString());
+            } finally {
+                if(channel != null) {
+                    channel.close();
+                }
+            }
+            
+            file = file.substring(0, file.length()-4) + ".prj";
+            File f = new File(file);
+            String prj = null;
+            if(f.exists()) {
+                Scanner s = new Scanner(f);
+                prj = "";
+                try {
+                    while(s.hasNextLine()) {
+                        if(prj.length() > 0) {
+                            prj += "\n";
+                        }
+                        prj += s.nextLine();
+                    }
+                } finally {
+                    s.close();
+                }
+            }
+            j.put("prj", prj);
+            
+            return j.toString();
+        }
     }
     
     private static String exceptionMessage(Exception e) {
@@ -377,5 +453,37 @@ public class LocalAccessApplet extends Applet {
             }
         });       
     }       
+    
+    public void getShapefileMetadata(final String file, final String requestId, final String callback, final String errorCallback) {
+        final Applet applet = this;
+        executorService.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    progress(true, "Lezen shapefile \"" + file + "\"...");
+                    
+                    Object ret = AccessController.doPrivileged(new PrivilegedAction() {
+                        @Override
+                        public Object run() {
+                            try {
+                                return Privileged.getShapefileMetadata(file);
+                            } catch (Exception ex) {
+                                return ex;
+                            }
+                        }
+                    });        
+                    if(ret instanceof Exception) {
+                        JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage((Exception)ret) });
+                    } else {                       
+                        JSObject.getWindow(applet).call(callback, new Object[] { requestId, ret });
+                    } 
+                } catch(Exception e) {
+                    JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage(e) });
+                } finally {
+                    progress(false);
+                }
+            }
+        });       
+    }
 }
 
