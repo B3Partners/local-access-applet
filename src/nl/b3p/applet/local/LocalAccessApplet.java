@@ -18,32 +18,46 @@ package nl.b3p.applet.local;
 
 import java.applet.Applet;
 import java.awt.*;
-import java.io.*;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
-import java.util.Scanner;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import javax.swing.*;
 import netscape.javascript.JSObject;
-import org.geotools.data.shapefile.dbf.DbaseFileHeader;
-import org.geotools.data.shapefile.shp.ShapefileHeader;
-import org.json.JSONArray;
-import org.json.JSONException;
-import org.json.JSONObject;
 
 /**
  * Applet which allows JavaScript to access local resources such as listing 
  * files and reading and writing files.
+ * 
+ * Usage: 
+ * <code>
+ * var appletDir = "/myapp/applet/";
+ * var appletContainterElementId = "applet-container";
+ * 
+ * function loadApplet(appletCaller) {
+ *     if(this.local == null) {
+ *         if(confirm("Load Java applet?")) {
+ *             this.local = new LocalAccess();
+ *             this.local.initApplet(appletDir, appletContainerElementId, function() {
+ *                 appletCaller(this.local);
+ *             });
+ *          }
+ *     } else {
+ *         appletCaller(this.local);
+ *     }
+ * }
+ * 
+ * loadApplet(function(local) {
+ *     local.callApplet("selectDirectory", console.log, console.log);
+ * });
+ * </code>
  *
  * @author Matthijs Laan
  */
 public class LocalAccessApplet extends Applet {
 
-    private static final int MAX_FILE_SIZE = 128 * 1024;
-    
     private static final String TOOLTIP_DEFAULT = "Java applet voor het openen van lokale mappen";
     private final JLabel status = new JLabel("");
     private Icon java, spinner;
@@ -94,396 +108,111 @@ public class LocalAccessApplet extends Applet {
         executorService.shutdown();
     }
     
-    private static class Privileged {
-        private static String selectDirectory(Component component, String title) {
-            JFileChooser chooser = new JFileChooser(); 
-            chooser.setDialogTitle(title);
-            chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            if(chooser.showOpenDialog(component) == JFileChooser.APPROVE_OPTION) {
-                return chooser.getSelectedFile().toString();
-            } else {
-                return null;
-            }
-        }
-        
-        private static JSONArray listDirectory(String dir) throws JSONException {
-            JSONArray ja = new JSONArray();
-            for(File f: new File(dir).listFiles()) {
-                JSONObject jo = new JSONObject();
-                boolean isDir = f.isDirectory();
-                jo.put("d", isDir ? 1 : 0);
-                jo.put("n", f.getName());
-                if(!isDir) {
-                    jo.put("s", f.length());
-                }
-                ja.put(jo);
-            }      
-            return ja;
-        }        
-        
-        private static String readFileUTF8(String file) throws IOException {
-            File f = new File(file);
-            if(!f.exists() || !f.canRead()) {
-                throw new FileNotFoundException(file);
-            }
-            if(f.length() > MAX_FILE_SIZE) {
-                throw new IOException("Bestand is te groot");
-            }
-                
-            FileInputStream in = new FileInputStream(file);
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            
-            byte[] buffer = new byte[8192];
-            
-            IOUtils.copyLarge(in, out, buffer);
-            
-            return out.toString("UTF-8");                    
-        }
-        
-        private static void writeFileUTF8(String file, String content) throws IOException {
-            FileOutputStream fos = new FileOutputStream(file);
-            fos.write(content.getBytes("UTF-8"));
-            fos.flush();
-            fos.close();
-        }      
-        
-        private static String getShapefileMetadata(String file) throws IOException, JSONException {
-            
-            if(!file.toLowerCase().endsWith(".shp")) {
-                throw new IllegalArgumentException("File does not end with .shp: " + file);
-            }
-            
-            FileChannel channel = new FileInputStream(file).getChannel();
-            ShapefileHeader header = new ShapefileHeader();
-            ByteBuffer bb = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
-            header.read(bb, true);
-            channel.close();
-            channel = null;
-            file = file.substring(0, file.length()-4) + ".dbf";
-            
-            JSONObject j = new JSONObject();
-            j.put("type", header.getShapeType().name);
-            j.put("version", header.getVersion());
-            j.put("minX", header.minX());
-            j.put("minY", header.minY());
-            j.put("maxX", header.maxX());
-            j.put("maxY", header.maxY());
-            
-            JSONObject dbf = new JSONObject();
-            j.put("dbf", dbf);
-            try {
-                channel = new FileInputStream(file).getChannel();
-                DbaseFileHeader dheader = new DbaseFileHeader();
-                bb = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
-                dheader.readHeader(bb);
-                dbf.put("numRecords", dheader.getNumRecords());
-                JSONArray fields = new JSONArray();
-                dbf.put("fields", fields);
-                for(int i = 0; i < dheader.getNumFields(); i++) {
-                    JSONObject field = new JSONObject();
-                    fields.put(field);
-                    field.put("name", dheader.getFieldName(i));
-                    field.put("length", dheader.getFieldLength(i));
-                    field.put("decimalCount", dheader.getFieldDecimalCount(i));
-                    field.put("class", dheader.getFieldClass(i).getName().toString());
-                    field.put("type", dheader.getFieldType(i) + "");
-                }
-            } catch(Exception e) {
-                dbf.put("error", e.toString());
-            } finally {
-                if(channel != null) {
-                    channel.close();
-                }
-            }
-            
-            file = file.substring(0, file.length()-4) + ".prj";
-            File f = new File(file);
-            String prj = null;
-            if(f.exists()) {
-                Scanner s = new Scanner(f);
-                prj = "";
-                try {
-                    while(s.hasNextLine()) {
-                        if(prj.length() > 0) {
-                            prj += "\n";
-                        }
-                        prj += s.nextLine();
-                    }
-                } finally {
-                    s.close();
-                }
-            }
-            j.put("prj", prj);
-            
-            return j.toString();
-        }
-    }
-    
     private static String exceptionMessage(Exception e) {
-        e.printStackTrace();
-        String s = e.toString();
-        StackTraceElement[] bt = e.getStackTrace();
+        Throwable t = e;
+        while(t instanceof InvocationTargetException && t.getCause() != null) {
+            t = t.getCause();
+        }
+        String s = t.toString();
+        StackTraceElement[] bt = t.getStackTrace();
         if(bt.length > 0) {
             s += " in " + bt[0].getFileName() + ":" + bt[0].getLineNumber() + " in " + bt[0].getMethodName();
         }
         return s;
     }
     
+    private void doCallback(String callback, Object[] params) {
+        Object[] params2 = new Object[params.length+1];
+        params2[0] = callback;
+        System.arraycopy(params, 0, params2, 1, params.length);
+        JSObject.getWindow(this).call("localAccessAppletCallback", params2);
+    }
     
-    /**
-     * Show a directory selector dialog.
-     * 
-     * @param title The title for the dialog.
-     * @param callback JavaScript function to call when a directory is selected.
-     *   The function is called with a String parameter with the selected 
-     *   directory which is null when the dialog is canceled.
-     * @param errorCallback JavaScript function to call when an error occurs. Single
-     *   String argument is a toString() of the Exception. 
-     */
-    public void selectDirectory(final String title, final String requestId, final String callback, final String errorCallback) {
-        final Applet applet = this;
+    private void doPrivileged(final String status, final Method method, final Object[] params, final String callback, final String errorCallback) {
         executorService.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    progress(true, status);
+                    
+                    Object ret = AccessController.doPrivileged(new PrivilegedAction() {
+                        @Override
+                        public Object run() {
+                            try {
+                                return method.invoke(null, params);
+                            } catch (Exception ex) {
+                                return ex;
+                            }
+                        }
+                    });        
+                    if(ret instanceof Exception) {
+                        doCallback(errorCallback, new Object[] { exceptionMessage((Exception)ret) });
+                    } else {                       
+                        doCallback(callback, new Object[] { ret });
+                    } 
+                } catch(Exception e) {
+                    doCallback(errorCallback, new Object[] { exceptionMessage(e) });
+                } finally {
+                    progress(false);
+                }
+            }
+        });       
+    }
+    
+    /* All methods callable through JavaScript LiveConnect below: */
 
-            @Override
-            public void run() {
-                try {
-                    progress(true, "Dialoog om map te selecteren wordt getoond");
-                    Object ret = AccessController.doPrivileged(new PrivilegedAction() {
-                        @Override
-                        public Object run() {
-                            try {
-                                return Privileged.selectDirectory(applet, title);
-                            } catch(Exception ex) {
-                                return ex;
-                            }
-                        }
-                    });            
-                    
-                    if(ret instanceof Exception) {
-                        JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage((Exception)ret) });
-                    } else {
-                        JSObject.getWindow(applet).call(callback, new Object[] { requestId, ret });
-                    }
-                    
-                } catch(Exception e) {
-                    JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage(e) });
-                } finally {
-                    progress(false);
-                }
-            }
-        });
-    }   
+    /* These functions are explicitly defined here (instead of calling methods
+     * dynamically using reflection) for reasons of simplicity. The actual 
+     * implementations are split out in separate classes. The methods below 
+     * are the only entry points for LiveConnect JavaScript calls.
+     */
     
-    /**
-     * List files in a directory. The JavaScript callback function is called
-     * with a single String argument which is stringified and minified JSON 
-     * instead of a JSObject to minimize LiveConnect marshalling time.
-     * <p>
-     * Example:
-     * <pre>
-     * [ { d: 0, n: "foo.txt", s: 1024 }, { d: 1, n: "subdir"} ]
-     * </pre>
-     * Where:<br>
-     * <i>d</i> is non-zero if the file is a directory<br>
-     * <i>n</i> is the filename<br>
-     * <i>s</i> is the filesize<br>
-     * 
-     * @param title The title for the dialog.
-     * @param callback JavaScript function to call with the list of files.
-     *   The function is called with a String parameter with stringified JSON
-     *   specified above.
-     * @param errorCallback JavaScript function to call when an error occurs. Single
-     *   String argument is a toString() of the Exception. 
-     */    
-    public void listDirectory(final String dir, final String requestId, final String callback, final String errorCallback) {       
-        final Applet applet = this;
-        executorService.execute(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    progress(true, "Ophalen lijst met bestanden in directory \"" + dir + "\"");
-                    
-                    Object ret = AccessController.doPrivileged(new PrivilegedAction() {
-                        @Override
-                        public Object run() {
-                            try {
-                                return Privileged.listDirectory(dir);
-                            } catch (Exception ex) {
-                                return ex;
-                            }
-                        }
-                    });            
-                    if(ret instanceof Exception) {
-                        JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage((Exception)ret) });
-                    } else {                       
-                        JSObject.getWindow(applet).call(callback, new Object[] { requestId, ret.toString()});
-                    } 
-                } catch(Exception e) {
-                    JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId,  exceptionMessage(e) });
-                } finally {
-                    progress(false);
-                }
-            }
-        });       
+    /* === File functions === */
+    
+    public void selectDirectory(final String title, final String callback, final String errorCallback) throws NoSuchMethodException {
+        doPrivileged("Dialoog om map te selecteren wordt getoond",
+                Files.class.getMethod("selectDirectory", Component.class, String.class),
+                new Object[] {this, title},
+                callback, errorCallback);
     }
     
-    /**
-     * Read a file and call a JavaScript function with the file content as a String
-     * assuming the file is UTF-8.
-     * 
-     * @param file the file to read
-     * @param callback JavaScript function to call with the file content.
-     * @param errorCallback JavaScript function to call when an error occurs. Single
-     *   String argument is a toString() of the Exception. 
-     */    
-    public void readFileUTF8(final String file, final String requestId, final String callback, final String errorCallback) {
-        final Applet applet = this;
-        executorService.execute(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    progress(true, "Lezen bestand \"" + file + "\"...");
-                    
-                    Object ret = AccessController.doPrivileged(new PrivilegedAction() {
-                        @Override
-                        public Object run() {
-                            try {
-                                return Privileged.readFileUTF8(file);
-                            } catch (Exception ex) {
-                                return ex;
-                            }
-                        }
-                    });            
-                    if(ret instanceof Exception) {
-                        JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage((Exception)ret) });
-                    } else {                       
-                        JSObject.getWindow(applet).call(callback, new Object[] { requestId, ret.toString()});
-                    } 
-                } catch(Exception e) {
-                    JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage(e) });
-                } finally {
-                    progress(false);
-                }
-            }
-        });       
+    public void listDirectory(final String dir, final String callback, final String errorCallback) throws NoSuchMethodException { 
+        doPrivileged("Ophalen lijst met bestanden in directory \"" + dir + "\"",
+                Files.class.getMethod("listDirectory", String.class),
+                new Object[] { dir },
+                callback, errorCallback);
+    }
+    
+    public void readFileUTF8(final String file, final String callback, final String errorCallback) throws NoSuchMethodException { 
+        doPrivileged("Lezen bestand \"" + file + "\"...",
+                Files.class.getMethod("readFileUTF8", String.class),
+                new Object[] { file },
+                callback, errorCallback);
+    }
+    
+    public void writeFileUTF8(final String file, final String content, final String callback, final String errorCallback) throws NoSuchMethodException { 
+        doPrivileged("Schrijven bestand \"" + file + "\"...",
+                Files.class.getMethod("writeFileUTF8", String.class, String.class),
+                new Object[] { file, content },
+                callback, errorCallback);
+    }
+    
+    /* === Shapefile functions === */    
+    
+    public void getShapefileMetadata(final String file, final String callback, final String errorCallback) throws NoSuchMethodException {
+        doPrivileged("Lezen shapefile \"" + file + "\"...",
+                Shapefiles.class.getMethod("getMetadata", String.class),
+                new Object[] { file },
+                callback, errorCallback);
+    }
+    
+    /* === NetCDF functions === */
+    
+    public void getNetCDFMetadata(final String file, final String callback, final String errorCallback) throws NoSuchMethodException {
+        doPrivileged("Lezen NetCDF informatie \"" + file + "\"...",
+                NetCDF.class.getMethod("getMetadata", String.class),
+                new Object[] { file },
+                callback, errorCallback);
     }    
-    
-    /**
-     * Read a file and call a JavaScript function with the file content as a String
-     * assuming the file is UTF-8. 
-     * 
-     * @param file the file to read
-     * @param callback JavaScript function to call with the file content.
-     * @param notFoundCallback JavaScript function to call if the file doest not exist
-     * @param errorCallback JavaScript function to call when an error occurs. Single
-     *   String argument is a toString() of the Exception. 
-     */    
-    public void readFileIfExistsUTF8(final String file, final String notFoundCallback, final String requestId, final String callback, final String errorCallback) {
-        final Applet applet = this;
-        executorService.execute(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    progress(true, "Lezen bestand \"" + file + "\"...");
-                    
-                    Object ret = AccessController.doPrivileged(new PrivilegedAction() {
-                        @Override
-                        public Object run() {
-                            try {
-                                return Privileged.readFileUTF8(file);
-                            } catch (Exception ex) {
-                                return ex;
-                            }
-                        }
-                    });        
-                    if(ret instanceof FileNotFoundException) {
-                        JSObject.getWindow(applet).call(notFoundCallback, new Object[] { requestId });
-                    } else if(ret instanceof Exception) {
-                        JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage((Exception)ret) });
-                    } else {                       
-                        JSObject.getWindow(applet).call(callback, new Object[] { requestId, ret.toString()});
-                    } 
-                } catch(Exception e) {
-                    JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage(e) });
-                } finally {
-                    progress(false);
-                }
-            }
-        });       
-    }      
-    
-    /**
-     * Write a String to a file in UTF-8 encoding.
-     * 
-     * @param file the file to write
-     * @param content String to write to the file in UTF-8.
-     * @param callback JavaScript function to call when successfully written.
-     * @param errorCallback JavaScript function to call when an error occurs. Single
-     *   String argument is a toString() of the Exception. 
-     */    
-    public void writeFileUTF8(final String file, final String content, final String requestId, final String callback, final String errorCallback) {
-        final Applet applet = this;
-        executorService.execute(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    progress(true, "Schrijven bestand \"" + file + "\"...");
-                    
-                    Object ret = AccessController.doPrivileged(new PrivilegedAction() {
-                        @Override
-                        public Object run() {
-                            try {
-                                Privileged.writeFileUTF8(file, content);
-                                return null;
-                            } catch (Exception ex) {
-                                return ex;
-                            }
-                        }
-                    });        
-                    if(ret instanceof Exception) {
-                        JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage((Exception)ret) });
-                    } else {                       
-                        JSObject.getWindow(applet).call(callback, new Object[] { requestId });
-                    } 
-                } catch(Exception e) {
-                    JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage(e) });
-                } finally {
-                    progress(false);
-                }
-            }
-        });       
-    }       
-    
-    public void getShapefileMetadata(final String file, final String requestId, final String callback, final String errorCallback) {
-        final Applet applet = this;
-        executorService.execute(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    progress(true, "Lezen shapefile \"" + file + "\"...");
-                    
-                    Object ret = AccessController.doPrivileged(new PrivilegedAction() {
-                        @Override
-                        public Object run() {
-                            try {
-                                return Privileged.getShapefileMetadata(file);
-                            } catch (Exception ex) {
-                                return ex;
-                            }
-                        }
-                    });        
-                    if(ret instanceof Exception) {
-                        JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage((Exception)ret) });
-                    } else {                       
-                        JSObject.getWindow(applet).call(callback, new Object[] { requestId, ret });
-                    } 
-                } catch(Exception e) {
-                    JSObject.getWindow(applet).call(errorCallback, new Object[] { requestId, exceptionMessage(e) });
-                } finally {
-                    progress(false);
-                }
-            }
-        });       
-    }
 }
 
