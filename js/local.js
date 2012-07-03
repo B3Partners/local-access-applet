@@ -65,8 +65,11 @@ LocalAccess.prototype.callApplet = function() {
         case "getShapefileMetadata":
             this.getApplet().getShapefileMetadata(params[0], params[1], params[2]);
             break;
-        case "getNetCDFMetadata":
-            this.getApplet().getNetCDFMetadata(params[0], params[1], params[2]);
+        case "getNCDump":
+            this.getApplet().getNCDump(params[0], params[1], params[2]);
+            break;
+        case "getNCML":
+            this.getApplet().getNCML(params[0], params[1], params[2]);
             break;
         default:
     }
