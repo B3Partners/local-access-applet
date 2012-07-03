@@ -208,11 +208,18 @@ public class LocalAccessApplet extends Applet {
     
     /* === NetCDF functions === */
     
-    public void getNetCDFMetadata(final String file, final String callback, final String errorCallback) throws NoSuchMethodException {
+    public void getNCDump(final String file, final String callback, final String errorCallback) throws NoSuchMethodException {
         doPrivileged("Lezen NetCDF informatie \"" + file + "\"...",
-                NetCDF.class.getMethod("getMetadata", String.class),
+                NetCDF.class.getMethod("getNCDump", String.class),
                 new Object[] { file },
                 callback, errorCallback);
     }    
+    
+    public void getNCML(final String file, final String callback, final String errorCallback) throws NoSuchMethodException {
+        doPrivileged("Lezen NetCDF informatie \"" + file + "\"...",
+                NetCDF.class.getMethod("getNCML", String.class),
+                new Object[] { file },
+                callback, errorCallback);
+    }      
 }
 

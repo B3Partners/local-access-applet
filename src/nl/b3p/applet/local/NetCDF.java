@@ -18,7 +18,6 @@ package nl.b3p.applet.local;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.io.StringWriter;
 import org.json.JSONException;
 import ucar.nc2.NCdumpW;
@@ -30,8 +29,7 @@ import ucar.nc2.NetcdfFile;
  */
 public class NetCDF {
         
-    public static String getMetadata(String file) throws IOException, JSONException {
-
+    public static String getNCDump(String file) throws IOException, JSONException {
         StringWriter writer = new StringWriter();            
         NetcdfFile nc = null;
         try {
@@ -40,11 +38,6 @@ public class NetCDF {
 
             NCdumpW.print(nc, "", writer, null);
 
-        } catch(Exception e) {
-            writer.write("\n");
-            PrintWriter pw = new PrintWriter(writer);
-            e.printStackTrace(pw);
-            pw.close();
         } finally {
             if(nc != null) {
                 try {
@@ -57,4 +50,26 @@ public class NetCDF {
 
         return writer.toString();
     }    
+    
+    public static String getNCML(String file) throws IOException, JSONException {
+        StringWriter writer = new StringWriter();            
+        NetcdfFile nc = null;
+        try {
+            File f = new File(file);
+            nc = NetcdfFile.open(f.toString(), null);
+
+            NCdumpW.writeNcML(nc, writer, NCdumpW.WantValues.none, file);
+
+        } finally {
+            if(nc != null) {
+                try {
+                    nc.close();
+                } catch(IOException e) {
+                    // ignore
+                }
+            }
+        }
+
+        return writer.toString();
+    }        
 }
