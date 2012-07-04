@@ -51,7 +51,7 @@ public class NetCDF {
         return writer.toString();
     }    
     
-    public static String getNCML(String file) throws IOException, JSONException {
+    public static String getNCML(String file) throws IOException {
         StringWriter writer = new StringWriter();            
         NetcdfFile nc = null;
         try {
@@ -71,5 +71,25 @@ public class NetCDF {
         }
 
         return writer.toString();
-    }        
+    }   
+    
+    public static String setTitle(String file, String title) throws IOException {
+        NetcdfFile nc = null;
+        try {
+            File f = new File(file);
+            nc = NetcdfFile.open(f.toString(), null);
+            
+            nc.setTitle(title);
+            nc.finish();
+            return "setted the title";
+        } finally {
+            if(nc != null) {
+                try {
+                    nc.close();
+                } catch(IOException e) {
+                    // ignore
+                }
+            }
+        }
+    }
 }

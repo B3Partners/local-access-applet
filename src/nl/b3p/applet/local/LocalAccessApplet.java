@@ -220,6 +220,13 @@ public class LocalAccessApplet extends Applet {
                 NetCDF.class.getMethod("getNCML", String.class),
                 new Object[] { file },
                 callback, errorCallback);
-    }      
+    }    
+    
+    public void setNCTitle(final String file, final String title, final String callback, final String errorCallback) throws NoSuchMethodException {
+        doPrivileged("Schrijven NetCDF informatie naar \"" + file + "\"...",
+                NetCDF.class.getMethod("setTitle", String.class, String.class),
+                new Object[] { file, title },
+                callback, errorCallback);
+    }
 }
 
