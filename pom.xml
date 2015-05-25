@@ -29,12 +29,31 @@
         <repository>
             <id>nl.b3p.gissuite</id>
             <name>B3P GIS Suite Maven Repository</name>
-            <url>file://${project.basedir}/../repo</url>
+            <url>file://${project.basedir}/../B3pGisSuiteMvnRepo</url>
         </repository>
     </repositories>
     <build>
         <defaultGoal>package</defaultGoal>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jarsigner-plugin</artifactId>
+                <version>1.4</version>
+                <executions>
+                    <execution>
+                        <id>sign</id>
+                        <goals>
+                            <goal>sign</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <keystore>src\main\key\keystore.ks</keystore>
+                    <alias>key</alias>
+                    <storepass>geheim</storepass>
+                    <keypass>geheim</keypass>
+                </configuration>
+            </plugin>
             <plugin>
                 <!-- maak (ook) een jar met alle dependencies ingepakt -->
                 <artifactId>maven-assembly-plugin</artifactId>
@@ -59,25 +78,6 @@
                         </goals>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jarsigner-plugin</artifactId>
-                <version>1.4</version>
-                <executions>
-                    <execution>
-                        <id>sign</id>
-                        <goals>
-                            <goal>sign</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <keystore>src/main/key/keystore.ks</keystore>
-                    <alias>key</alias>
-                    <storepass>geheim</storepass>
-                    <keypass>geheim</keypass>
-                </configuration>
             </plugin>
         </plugins>
     </build>
