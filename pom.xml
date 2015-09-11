@@ -41,7 +41,7 @@
         <connection>scm:git:git@github.com:B3Partners/local-access-applet.git</connection>
         <developerConnection>scm:git:git@github.com:B3Partners/local-access-applet.git</developerConnection>
         <url>https://github.com/B3Partners/local-access-applet</url>
-      <tag>securityfilter-b3p-4.2.1</tag>
+      <tag>local-access-applet-4.2.1</tag>
     </scm>
     <distributionManagement>
         <repository>
